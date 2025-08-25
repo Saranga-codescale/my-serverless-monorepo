@@ -1,0 +1,237 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Lambda functions with DynamoDB access
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (development or production)
+
+  Namespace:
+    Type: String
+    Default: my-serverless-monorepo
+    Description: Namespace for resource naming
+
+  UsersTableName:
+    Type: String
+    Default: !Sub '${Namespace}-users-${Environment}'
+    Description: DynamoDB table name for users
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs22.x
+    MemorySize: 256
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        NODE_ENV: !Ref Environment
+    Tags:
+      Environment: !Ref Environment
+      Project: !Ref Namespace
+
+Resources:
+  # DynamoDB Table for Users
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref UsersTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref Namespace
+
+  # IAM Role for Lambda Functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Namespace}-lambda-execution-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !GetAtt UsersTable.Arn
+                  - !Sub '${UsersTable.Arn}/index/*'
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:DescribeLogGroups
+                Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref Namespace
+
+  # Lambda Function: Create User
+  CreateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Namespace}-api-create-user-${Environment}'
+      CodeUri: dist/lambda/create-user/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: Lambda function to create a new user
+      Events:
+        CreateUserAPI:
+          Type: Api
+          Properties:
+            Path: /users
+            Method: POST
+            RestApiId: !Ref ServerlessApi
+
+  # Lambda Function: Get User
+  GetUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Namespace}-api-get-user-${Environment}'
+      CodeUri: dist/lambda/get-user/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: Lambda function to get user details
+      Events:
+        GetUserAPI:
+          Type: Api
+          Properties:
+            Path: /users/{id}
+            Method: GET
+            RestApiId: !Ref ServerlessApi
+
+  # Lambda Function: Update Profile
+  UpdateProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Namespace}-api-update-profile-${Environment}'
+      CodeUri: dist/lambda/update-profile/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: Lambda function to update user profile
+      Events:
+        UpdateProfileAPI:
+          Type: Api
+          Properties:
+            Path: /users/{id}
+            Method: PUT
+            RestApiId: !Ref ServerlessApi
+
+  # API Gateway
+  ServerlessApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub '${Namespace}-api-${Environment}'
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: AWS_IAM
+      EndpointConfiguration:
+        Type: REGIONAL
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref Namespace
+
+  # CloudWatch Log Groups
+  CreateUserLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Namespace}-api-create-user-${Environment}'
+      RetentionInDays: 14
+
+  GetUserLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Namespace}-api-get-user-${Environment}'
+      RetentionInDays: 14
+
+  UpdateProfileLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Namespace}-api-update-profile-${Environment}'
+      RetentionInDays: 14
+
+Outputs:
+  # API Gateway URL
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ServerlessApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${Namespace}-api-url-${Environment}'
+
+  # DynamoDB Table
+  UsersTableName:
+    Description: DynamoDB table name for users
+    Value: !Ref UsersTable
+    Export:
+      Name: !Sub '${Namespace}-users-table-${Environment}'
+
+  # Lambda Function ARNs
+  CreateUserFunctionArn:
+    Description: Create User Lambda Function ARN
+    Value: !GetAtt CreateUserFunction.Arn
+    Export:
+      Name: !Sub '${Namespace}-create-user-function-arn-${Environment}'
+
+  GetUserFunctionArn:
+    Description: Get User Lambda Function ARN
+    Value: !GetAtt GetUserFunction.Arn
+    Export:
+      Name: !Sub '${Namespace}-get-user-function-arn-${Environment}'
+
+  UpdateProfileFunctionArn:
+    Description: Update Profile Lambda Function ARN
+    Value: !GetAtt UpdateProfileFunction.Arn
+    Export:
+      Name: !Sub '${Namespace}-update-profile-function-arn-${Environment}'
+
+  # IAM Role ARN
+  LambdaExecutionRoleArn:
+    Description: Lambda execution role ARN
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${Namespace}-lambda-role-arn-${Environment}'

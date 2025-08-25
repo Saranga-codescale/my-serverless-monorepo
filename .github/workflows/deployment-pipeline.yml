@@ -1,9 +1,9 @@
-name: Deploy AWS Lambda Functions to Staging # or Production
+name: Deploy Serverless Application
 
 on:
   push:
     branches:
-      - prod # Change if needed
+      - prod # Deploy to production
 
 jobs:
   build-and-deploy:
@@ -19,42 +19,50 @@ jobs:
           node-version: 22
           cache: 'npm'
 
+      - name: Setup SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1 # Set your default region or use repository variable
+
       - name: Install Dependencies
         run: npm install
 
       - name: Build Lambda Functions
         run: npx nx run-many --target=build --all
 
-      - name: Zip and Upload Lambda Functions
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION }} # Change if needed
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          ROLE_ARN: ${{ vars.AWS_LAMBDA_ROLE_ARN }}
-          USERS_TABLE: ${{ vars.USERS_TABLE_STG }}
+      - name: Determine Environment
+        id: env
         run: |
-          for function in $(ls dist/lambda); do
-            cd dist/lambda/$function
-            zip -r $function.zip .
+          if [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "namespace=my-serverless-monorepo" >> $GITHUB_OUTPUT
+          fi
 
-            FUNCTION_NAME="<namespace>-api-$function-stg"
+      - name: SAM Build
+        run: sam build
 
-            # Check if function exists
-            if aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1; then
-              echo "Updating existing function: $FUNCTION_NAME"
-              aws lambda update-function-code --function-name $FUNCTION_NAME --zip-file fileb://$function.zip
-              aws lambda update-function-configuration --function-name $FUNCTION_NAME \
-                --environment Variables="{USERS_TABLE=${USERS_TABLE}}"
-            else
-              echo "Creating new function: $FUNCTION_NAME"
-              aws lambda create-function \
-                --function-name $FUNCTION_NAME \
-                --runtime nodejs22.x \
-                --role $ROLE_ARN \
-                --handler index.handler \
-                --zip-file fileb://$function.zip \
-                --environment Variables="{USERS_TABLE=${USERS_TABLE}}"
-            fi
+      - name: SAM Deploy
+        env:
+          AWS_REGION: us-east-1 # Set your default region
+        run: |
+          # Create S3 bucket for SAM deployment if it doesn't exist
+          BUCKET_NAME="${{ steps.env.outputs.namespace }}-sam-deployment-${{ steps.env.outputs.environment }}"
+          aws s3 mb s3://$BUCKET_NAME --region $AWS_REGION 2>/dev/null || true
 
-            cd ../../../
-          done
+          sam deploy \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --stack-name ${{ steps.env.outputs.namespace }}-${{ steps.env.outputs.environment }} \
+            --s3-bucket $BUCKET_NAME \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --region $AWS_REGION \
+            --parameter-overrides \
+              Environment=${{ steps.env.outputs.environment }} \
+              Namespace=${{ steps.env.outputs.namespace }}
