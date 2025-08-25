@@ -12,6 +12,7 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      NX_CLOUD_ACCESS_TOKEN: ""
 
     steps:
       - name: Checkout Repository
@@ -32,7 +33,7 @@ jobs:
         run: npm install
 
       - name: Build Lambda Functions
-        run: npx nx run-many --target=build --all
+        run: npx nx run-many --target=build --all --skip-nx-cache
 
       - name: Determine Environment
         id: env
@@ -66,4 +67,4 @@ jobs:
               EnvType=prod \
               StageName=prod \
               awsAKey=${{ secrets.AWS_ACCESS_KEY_ID }} \
-              awsSKey=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+              awsSKey=${{ secrets.AWS_SECRET_ACCESS_KEY }}
