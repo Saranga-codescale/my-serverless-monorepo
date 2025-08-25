@@ -18,7 +18,7 @@ Parameters:
 
   UsersTableName:
     Type: String
-    Default: !Sub '${Namespace}-users-${Environment}'
+    Default: 'my-serverless-monorepo-users-dev'
     Description: DynamoDB table name for users
 
 Globals:
@@ -39,7 +39,7 @@ Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Ref UsersTableName
+      TableName: !Sub '${Namespace}-users-${Environment}'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: id
