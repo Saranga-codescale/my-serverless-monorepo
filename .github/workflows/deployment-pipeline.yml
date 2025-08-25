@@ -1,0 +1,60 @@
+name: Deploy AWS Lambda Functions to Staging # or Production
+
+on:
+  push:
+    branches:
+      - prod # Change if needed
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Lambda Functions
+        run: npx nx run-many --target=build --all
+
+      - name: Zip and Upload Lambda Functions
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }} # Change if needed
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ROLE_ARN: ${{ vars.AWS_LAMBDA_ROLE_ARN }}
+          USERS_TABLE: ${{ vars.USERS_TABLE_STG }}
+        run: |
+          for function in $(ls dist/lambda); do
+            cd dist/lambda/$function
+            zip -r $function.zip .
+
+            FUNCTION_NAME="<namespace>-api-$function-stg"
+
+            # Check if function exists
+            if aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1; then
+              echo "Updating existing function: $FUNCTION_NAME"
+              aws lambda update-function-code --function-name $FUNCTION_NAME --zip-file fileb://$function.zip
+              aws lambda update-function-configuration --function-name $FUNCTION_NAME \
+                --environment Variables="{USERS_TABLE=${USERS_TABLE}}"
+            else
+              echo "Creating new function: $FUNCTION_NAME"
+              aws lambda create-function \
+                --function-name $FUNCTION_NAME \
+                --runtime nodejs22.x \
+                --role $ROLE_ARN \
+                --handler index.handler \
+                --zip-file fileb://$function.zip \
+                --environment Variables="{USERS_TABLE=${USERS_TABLE}}"
+            fi
+
+            cd ../../../
+          done

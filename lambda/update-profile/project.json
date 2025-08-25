@@ -1,0 +1,17 @@
+{
+  "name": "update-profile",
+  "targets": {
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "options": {
+        "outputPath": "dist/lambda/update-profile",
+        "format": ["esm"],
+        "platform": "node",
+        "target": "node22",
+        "main": "lambda/update-profile/src/index.ts",
+        "tsConfig": "lambda/update-profile/tsconfig.lib.json",
+        "external": ["aws-sdk"]
+      }
+    }
+  }
+}

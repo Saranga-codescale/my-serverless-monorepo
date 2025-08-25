@@ -1,0 +1,17 @@
+{
+  "name": "create-user",
+  "targets": {
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "options": {
+        "outputPath": "dist/lambda/create-user",
+        "format": ["esm"],
+        "platform": "node",
+        "target": "node22",
+        "main": "lambda/create-user/src/index.ts",
+        "tsConfig": "lambda/create-user/tsconfig.lib.json",
+        "external": ["aws-sdk"]
+      }
+    }
+  }
+}

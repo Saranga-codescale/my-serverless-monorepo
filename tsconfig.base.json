@@ -1,0 +1,28 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": false,
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "target": "ES2020",
+    "module": "CommonJS",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "baseUrl": "./lambda", // Important: Adjust if your Lambda functions are not directly under 'lambda'
+    "paths": {
+      "@my-serverless-monorepo/create-user": [
+        "lambda/create-user/src/index.ts"
+      ],
+      "@my-serverless-monorepo/get-user": ["lambda/get-user/src/index.ts"],
+      "@my-serverless-monorepo/update-profile": [
+        "lambda/update-profile/src/index.ts"
+      ]
+    }
+  },
+  "exclude": ["node_modules", "tmp"]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "get-user",
+  "targets": {
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "options": {
+        "outputPath": "dist/lambda/get-user",
+        "format": ["esm"],
+        "platform": "node",
+        "target": "node22",
+        "main": "lambda/get-user/src/index.ts",
+        "tsConfig": "lambda/get-user/tsconfig.lib.json",
+        "external": ["aws-sdk"]
+      }
+    }
+  }
+}
