@@ -52,7 +52,6 @@ jobs:
               Environment:
                 Variables:
                   USERS_TABLE: !Ref UsersTable
-              Role: ${{ vars.AWS_LAMBDA_ROLE_ARN }}
 
           Resources:
           EOF
@@ -66,6 +65,7 @@ jobs:
                 FunctionName: !Sub '\${AWS::StackName}-$function'
                 CodeUri: dist/lambda/$function/
                 Handler: index.handler
+                Role: ${{ vars.AWS_LAMBDA_ROLE_ARN }}
 
           EOF
           done
