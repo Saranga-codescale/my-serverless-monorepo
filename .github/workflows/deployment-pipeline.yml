@@ -35,36 +35,50 @@ jobs:
       - name: Build Lambda Functions
         run: npx nx run-many --target=build --all --skip-nx-cache
 
-      - name: Determine Environment
-        id: env
+      - name: Generate SAM Template
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
-            echo "environment=prod" >> $GITHUB_OUTPUT
-            echo "namespace=my-serverless-monorepo" >> $GITHUB_OUTPUT
-          fi
+          cat > template.yaml << EOF
+          AWSTemplateFormatVersion: '2010-09-09'
+          Transform: AWS::Serverless-2016-10-31
 
-      - name: SAM Build
-        run: sam build
+          Parameters:
+            UsersTable:
+              Type: String
+              Default: ${{ vars.USERS_TABLE_STG }}
 
-      - name: SAM Deploy
+          Globals:
+            Function:
+              Runtime: nodejs22.x
+              Environment:
+                Variables:
+                  USERS_TABLE: !Ref UsersTable
+              Role: ${{ vars.AWS_LAMBDA_ROLE_ARN }}
+
+          Resources:
+          EOF
+
+          # Generate function resources dynamically
+          for function in $(ls dist/lambda); do
+            cat >> template.yaml << EOF
+            ${function^}Function:
+              Type: AWS::Serverless::Function
+              Properties:
+                FunctionName: !Sub '\${AWS::StackName}-$function'
+                CodeUri: dist/lambda/$function/
+                Handler: index.handler
+
+          EOF
+          done
+
+      - name: Deploy Stack
         env:
-          AWS_REGION: us-east-1 # Set your default region
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          # Create S3 bucket for SAM deployment if it doesn't exist
-          BUCKET_NAME="${{ steps.env.outputs.namespace }}-sam-deployment-${{ steps.env.outputs.environment }}"
-          aws s3 mb s3://$BUCKET_NAME --region $AWS_REGION 2>/dev/null || true
-
           sam deploy \
+            --stack-name "<namespace>-api-stg" \
+            --s3-bucket ${{ vars.DEPLOYMENT_BUCKET }} \
+            --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --stack-name ${{ steps.env.outputs.namespace }}-${{ steps.env.outputs.environment }} \
-            --s3-bucket $BUCKET_NAME \
-            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-            --region $AWS_REGION \
-            --parameter-overrides \
-              Environment=${{ steps.env.outputs.environment }} \
-              Namespace=${{ steps.env.outputs.namespace }} \
-              EnvType=prod \
-              StageName=prod \
-              awsAKey=${{ secrets.AWS_ACCESS_KEY_ID }} \
-              awsSKey=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            --no-fail-on-empty-changeset
