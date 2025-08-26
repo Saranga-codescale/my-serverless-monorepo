@@ -58,8 +58,10 @@ jobs:
 
           # Generate function resources dynamically
           for function in $(ls dist/lambda); do
+            # Convert function name to valid CloudFormation logical ID (alphanumeric only)
+            logical_id=$(echo "$function" | sed 's/-//g' | sed 's/\b\w/\U&/g')
             cat >> template.yaml << EOF
-            ${function^}Function:
+            ${logical_id}Function:
               Type: AWS::Serverless::Function
               Properties:
                 FunctionName: !Sub '\${AWS::StackName}-$function'
